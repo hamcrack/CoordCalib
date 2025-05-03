@@ -13,7 +13,6 @@ payload_size = struct.calcsize("Q")
 
 aruco_dict = cv2.aruco.getPredefinedDictionary(cv2.aruco.DICT_4X4_50)
 board = cv2.aruco.CharucoBoard((7, 5), 0.03, 0.02, aruco_dict)
-detectorParams = cv2.aruco.DetectorParameters()
 detector = cv2.aruco.CharucoDetector(board)
 
 img = board.generateImage((864, 1080))

@@ -11,6 +11,10 @@ save_vid = False
 rotationMatrix = np.identity(3, dtype=np.float32)
 translationVector = np.array([[0], [0], [0]], dtype=np.float32)
 
+aruco_dict = cv2.aruco.getPredefinedDictionary(cv2.aruco.DICT_4X4_50)
+detectorParams = cv2.aruco.DetectorParameters()
+detector = cv2.aruco.ArucoDetector(aruco_dict, detectorParams)
+
 data = b""
 payload_size = struct.calcsize("Q")
 image_size = (1152, 534)
@@ -89,8 +93,8 @@ def set_zone_points(event, x, y, flags, param):
 if live:
     image_size = (640, 480)
 
-    cameraMatrix = np.array([[888.37495946, 0, 664.61495248], [0, 888.37495946, 353.54694702], [0, 0, 1]], dtype=np.float32)
-    distCoeffs = np.array([[-0.10650025, 1.0173892, 0.00192866, -0.0013329, 0.1139497, 0.29545028, 0.91682975, 0.51278569]], dtype=np.float32)
+    cameraMatrix = np.array([[642.70404546, 0, 315.2411113], [0, 642.70404546, 236.77473824], [0, 0, 1]], dtype=np.float32)
+    distCoeffs = np.array([[13.2006295, -63.520978, -0.00165712, 0.00118068, -34.7385185, 13.111275, -63.2187353, -34.4029467]], dtype=np.float32)
 
     client_socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
     client_socket.connect(('172.25.0.1', 9999))
@@ -118,31 +122,36 @@ while True:
         data = data[msg_size:]
 
         frame = pickle.loads(frame_data)
+
+        corners, ids, rejectedImgPoints = detector.detectMarkers(frame)
+        cv2.aruco.drawDetectedMarkers(frame, corners, ids)
     else:
         frame = cv2.imread("1_empty_ramp.png")
 
-    for i in range(4):
-        x, y = img_points[i]
-        x, y = int(x), int(y)
-        if x != 0 and y != 0:
-            if img_points[i-1][0] != 0 and img_points[i-1][1] != 0:
-                cv2.line(frame, (int(img_points[i-1][0]), int(img_points[i-1][1])), (x, y), (255, 0, 0), 2)
-            cv2.putText(frame, str(i) + " : " + str(img_points[i]), (x, y), cv2.FONT_HERSHEY_SIMPLEX, 1, (255, 0, 0), 2)
-            cv2.circle(frame, (x,y), 5, (255,0,0), -1)
+        for i in range(4):
+            x, y = img_points[i]
+            x, y = int(x), int(y)
+            if x != 0 and y != 0:
+                if img_points[i-1][0] != 0 and img_points[i-1][1] != 0:
+                    cv2.line(frame, (int(img_points[i-1][0]), int(img_points[i-1][1])), (x, y), (255, 0, 0), 2)
+                cv2.putText(frame, str(i) + " : " + str(img_points[i]), (x, y), cv2.FONT_HERSHEY_SIMPLEX, 1, (255, 0, 0), 2)
+                cv2.circle(frame, (x,y), 5, (255,0,0), -1)
 
-    # Define unit xyz axes. These are then projected to camera view using the rotation matrix and translation vector.
-    unitv_points = np.array([[0,0,0], [0.02,0,0], [0,0.02,0], [0,0,-0.02]], dtype = 'float32').reshape((4,1,3))
-    if not np.array_equal(rotationMatrix, np.identity(3)):
-        points, jac = cv2.projectPoints(unitv_points, rotationMatrix, translationVector, cameraMatrix, distCoeffs)
-        colors = [(255, 0, 0), (0, 255, 0), (0, 0, 255), (0, 0, 0)]
-        axis_points = points.reshape((4, 2))
-        center_x = int((img_points[0][0] + img_points[2][0] + img_points[3][0] + img_points[1][0]) / 4)
-        center_y = int((img_points[0][1] + img_points[2][1] + img_points[3][1] + img_points[1][1]) / 4)
-        origin = (center_x, center_y)
-        for p, c in zip(axis_points[1:], colors[:3]):
-            p = (int(p[0]), int(p[1]))
-            if 0 <= p[0] < frame.shape[1] and 0 <= p[1] < frame.shape[1]:
-                # Sometimes qr detector will make a mistake and projected point will overflow integer value. We skip these cases.
+        # Define unit xyz axes. These are then projected to camera view using the rotation matrix and translation vector.
+        board_center_y = ((image_size[1]/2) / math.sin(math.radians(camera_angle)) / 1000)
+        
+        unitv_points = np.array([[0,board_center_y,0], [0.02,board_center_y,0], [0,0.02 + board_center_y,0], [0,board_center_y,-0.02]], dtype = 'float32').reshape((4,1,3))
+        if not np.array_equal(rotationMatrix, np.identity(3)):
+            points, jac = cv2.projectPoints(unitv_points, rotationMatrix, translationVector, cameraMatrix, distCoeffs)
+            colors = [(255, 0, 0), (0, 255, 0), (0, 0, 255), (0, 0, 0)]
+            points = points.reshape((4, 2))
+            origin = (int(points[0][0]), int(points[0][1]))
+            for p, c in zip(points[1:], colors[:3]):
+                p = (int(p[0]), int(p[1]))
+                if origin[0] > 5 * frame.shape[1] or origin[1] > 5 * frame.shape[1]:
+                    break
+                if p[0] > 5 * frame.shape[1] or p[1] > 5 * frame.shape[1]:
+                    break
                 cv2.line(frame, origin, p, c, 5)
 
     if save_vid:
